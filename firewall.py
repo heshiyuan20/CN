@@ -31,7 +31,7 @@ class Firewall:
         "udp": inet.IPPROTO_UDP,
     }
 
-    def __init__(self, rule_file="firewall_rules.json"):
+    def __init__(self, rule_file="firewall_rule.json"):
         self.rule_file = rule_file
         self.rules = self._load_rules(rule_file)
         self.installed = set()
@@ -66,10 +66,27 @@ class Firewall:
         """
         rules = []
 
-        # TODO: read rule_file
-        # TODO: parse JSON rules
-        # TODO: create FirewallRule objects
-        # TODO: append them into rules
+        rule_path = rule_file
+        if not os.path.isabs(rule_path):
+            rule_path = os.path.join(os.path.dirname(__file__), rule_file)
+
+        if not os.path.exists(rule_path):
+            return rules
+
+        with open(rule_path, 'r', encoding='utf-8') as handle:
+            data = json.load(handle)
+
+        for raw_rule in data.get('rules', []):
+            rules.append(
+                FirewallRule(
+                    src_ip=self._normalize_any(raw_rule.get('src_ip')),
+                    dst_ip=self._normalize_any(raw_rule.get('dst_ip')),
+                    proto=self._normalize_proto(raw_rule.get('proto')),
+                    src_port=self._normalize_any(raw_rule.get('src_port')),
+                    dst_port=self._normalize_any(raw_rule.get('dst_port')),
+                    action=str(raw_rule.get('action', 'deny')).lower(),
+                )
+            )
 
         return rules
 
@@ -79,17 +96,31 @@ class Firewall:
         """
         for dpid, ofctl in ofctls.items():
             for rule in self.rules:
+                if rule.action != 'deny':
+                    continue
 
-                # TODO: only handle deny rules
+                nw_proto = self._proto_to_number(rule.proto)
+                src_port = self._normalize_port(rule.src_port)
+                dst_port = self._normalize_port(rule.dst_port)
 
-                # TODO: convert protocol name to protocol number
+                if nw_proto == inet.IPPROTO_ICMP and (src_port or dst_port):
+                    continue
+                if nw_proto not in (0, inet.IPPROTO_TCP, inet.IPPROTO_UDP) and (src_port or dst_port):
+                    continue
 
-                # TODO: normalize source and destination ports
+                install_key = (dpid, rule)
+                if install_key in self.installed:
+                    continue
 
-                # TODO: skip invalid port rules
-
-                # TODO: avoid duplicated flow installation
-
-                # TODO: use ofctl.set_flow() to install a high-priority drop flow
-
-                pass
+                ofctl.set_flow(
+                    cookie=self.COOKIE,
+                    priority=self.PRIORITY,
+                    dl_type=ether.ETH_TYPE_IP,
+                    nw_src=rule.src_ip or 0,
+                    nw_dst=rule.dst_ip or 0,
+                    nw_proto=nw_proto,
+                    tp_src=src_port,
+                    tp_dst=dst_port,
+                    actions=[],
+                )
+                self.installed.add(install_key)
