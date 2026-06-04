@@ -17,6 +17,7 @@ from collections import defaultdict
 from collections import deque
 from itertools import combinations
 import time
+import networkx as nx
 from ofctl_utilis import OfCtl,OfCtl_v1_0,OfCtl_after_v1_2,VLANID_NONE
 import logging
 import copy
@@ -34,6 +35,7 @@ class ControllerApp(app_manager.OSKenApp):
         self.hosts = {}
         self.adjacency = defaultdict(dict)
         self.switch_host_ports = defaultdict(dict)
+        self.topology_graph = nx.Graph()
         self.firewall = Firewall(rule_file='firewall_rule.json')
 
     def _mac_to_bin(self, mac_addr):
@@ -75,6 +77,35 @@ class ControllerApp(app_manager.OSKenApp):
                 refreshed_hosts[mac] = dict(host_info)
                 self.switch_host_ports[host_info['switch']][mac] = host_info['port']
         self.hosts = refreshed_hosts
+        self._rebuild_topology_graph()
+
+    def _switch_node_name(self, dpid):
+        return 'switch_%s' % dpid
+
+    def _host_node_name(self, mac_addr):
+        return 'host_%s' % mac_addr
+
+    def _rebuild_topology_graph(self):
+        graph = nx.Graph()
+        for dpid in sorted(self.datapaths):
+            graph.add_node(self._switch_node_name(dpid), kind='switch', dpid=dpid)
+
+        seen_edges = set()
+        for src, neighbors in sorted(self.adjacency.items()):
+            for dst in sorted(neighbors):
+                edge = tuple(sorted((src, dst)))
+                if edge in seen_edges:
+                    continue
+                seen_edges.add(edge)
+                graph.add_edge(self._switch_node_name(edge[0]), self._switch_node_name(edge[1]), kind='switch-link')
+
+        for mac_addr, host_info in sorted(self.hosts.items()):
+            host_node = self._host_node_name(mac_addr)
+            switch_node = self._switch_node_name(host_info['switch'])
+            graph.add_node(host_node, kind='host', mac=mac_addr, ip=host_info.get('ip'))
+            graph.add_edge(host_node, switch_node, kind='host-link')
+
+        self.topology_graph = graph
 
     def _clear_switch_flows(self, datapath):
         ofp = datapath.ofproto
@@ -177,30 +208,21 @@ class ControllerApp(app_manager.OSKenApp):
         if not self.datapaths:
             self.logger.info('Current topology: no switches connected')
             return
-        topology_edges = []
-        seen = set()
-        for src, neighbors in sorted(self.adjacency.items()):
-            for dst in sorted(neighbors):
-                edge = tuple(sorted((src, dst)))
-                if edge in seen:
-                    continue
-                seen.add(edge)
-                topology_edges.append('switch_%s <-> switch_%s' % edge)
-        host_edges = [
-            'host_%s <-> switch_%s' % (mac, info['switch'])
-            for mac, info in sorted(self.hosts.items())
-        ]
-        self.logger.info('Current topology edges: %s', ', '.join(topology_edges + host_edges) or 'none')
+        graph_nodes = sorted(self.topology_graph.nodes())
+        graph_edges = sorted('%s <-> %s' % (left, right) for left, right in self.topology_graph.edges())
+        self.logger.info('Current topology nodes: %s', ', '.join(graph_nodes) or 'none')
+        self.logger.info('Current topology edges: %s', ', '.join(graph_edges) or 'none')
 
         for left_switch, right_switch in combinations(sorted(self.datapaths), 2):
-            distances, parents = self._dijkstra(left_switch)
-            switch_path = self._reconstruct_path(parents, left_switch, right_switch)
-            if not switch_path:
+            left_node = self._switch_node_name(left_switch)
+            right_node = self._switch_node_name(right_switch)
+            if not nx.has_path(self.topology_graph, left_node, right_node):
                 self.logger.info('No path between switch_%s and switch_%s', left_switch, right_switch)
                 continue
-            distance = len(switch_path) - 1
+            switch_node_path = nx.shortest_path(self.topology_graph, left_node, right_node)
+            distance = nx.shortest_path_length(self.topology_graph, left_node, right_node)
             self.logger.info('The distance from switch_%s to switch_%s : %s', left_switch, right_switch, distance)
-            self.logger.info('Path: %s', ' -> '.join('switch_%s' % dpid for dpid in switch_path))
+            self.logger.info('Path: %s', ' -> '.join(switch_node_path))
 
         for left_mac, right_mac in combinations(sorted(self.hosts), 2):
             left = self.hosts[left_mac]
