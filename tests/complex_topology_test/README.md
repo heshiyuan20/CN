@@ -2,7 +2,7 @@
 
 This directory provides a larger Mininet topology for the shortest-path switching demo.
 
-## Topology
+## Initial Topology Figure
 
 The topology contains 7 hosts, 7 switches, and 18 links in total.
 
@@ -11,15 +11,17 @@ All hosts in this demo use the `10.0.0.0/24` subnet so the baseline connectivity
 - Host links: `h1-s1`, `h2-s2`, `h3-s3`, `h4-s4`, `h5-s5`, `h6-s6`, `h7-s7`
 - Switch links: `s1-s2`, `s2-s3`, `s3-s4`, `s4-s5`, `s5-s6`, `s6-s7`, `s1-s4`, `s2-s5`, `s3-s6`, `s4-s7`, `s2-s7`
 
+Figure 1 is the initial graph visualization used by the complex shortest-path test. Hosts and switches are nodes, and all physical links are edges.
+
 ```mermaid
 graph LR
-    h1 --- s1
-    h2 --- s2
-    h3 --- s3
-    h4 --- s4
-    h5 --- s5
-    h6 --- s6
-    h7 --- s7
+    h1((h1)) --- s1[s1]
+    h2((h2)) --- s2[s2]
+    h3((h3)) --- s3[s3]
+    h4((h4)) --- s4[s4]
+    h5((h5)) --- s5[s5]
+    h6((h6)) --- s6[s6]
+    h7((h7)) --- s7[s7]
 
     s1 --- s2
     s2 --- s3
@@ -34,19 +36,75 @@ graph LR
     s2 --- s7
 ```
 
-## Expected Shortest Paths
+## Initial Shortest-Path Reference
 
-The controller uses Dijkstra over an unweighted graph, so shortest paths are counted by link hops.
+The controller uses Dijkstra on an unweighted graph. When there are multiple equal-hop candidates, the implementation visits neighbor switch IDs in ascending order, so the reference paths below match the controller's actual tie-breaking rule.
 
-- `h1 -> h4`: `h1 -> s1 -> s4 -> h4`
-- `h1 -> h7`: `h1 -> s1 -> s2 -> s7 -> h7`
-- `h2 -> h5`: `h2 -> s2 -> s5 -> h5`
-- `h2 -> h7`: `h2 -> s2 -> s7 -> h7`
-- `h3 -> h6`: `h3 -> s3 -> s6 -> h6`
-- `h4 -> h7`: `h4 -> s4 -> s7 -> h7`
-- `h5 -> h7`: `h5 -> s5 -> s2 -> s7 -> h7`
+Because placing all 21 host-pair paths directly on top of one graph would make the figure unreadable, the graph in Figure 1 is paired with the complete path reference table below. This is the comparison baseline for the program output after the initial topology is discovered.
 
-Other host pairs follow the same switch-level shortest-path rule and should be printed by the controller after topology discovery.
+| Host pair | Expected shortest path |
+| --- | --- |
+| `h1 <-> h2` | `h1 -> s1 -> s2 -> h2` |
+| `h1 <-> h3` | `h1 -> s1 -> s2 -> s3 -> h3` |
+| `h1 <-> h4` | `h1 -> s1 -> s4 -> h4` |
+| `h1 <-> h5` | `h1 -> s1 -> s2 -> s5 -> h5` |
+| `h1 <-> h6` | `h1 -> s1 -> s2 -> s3 -> s6 -> h6` |
+| `h1 <-> h7` | `h1 -> s1 -> s2 -> s7 -> h7` |
+| `h2 <-> h3` | `h2 -> s2 -> s3 -> h3` |
+| `h2 <-> h4` | `h2 -> s2 -> s1 -> s4 -> h4` |
+| `h2 <-> h5` | `h2 -> s2 -> s5 -> h5` |
+| `h2 <-> h6` | `h2 -> s2 -> s3 -> s6 -> h6` |
+| `h2 <-> h7` | `h2 -> s2 -> s7 -> h7` |
+| `h3 <-> h4` | `h3 -> s3 -> s4 -> h4` |
+| `h3 <-> h5` | `h3 -> s3 -> s2 -> s5 -> h5` |
+| `h3 <-> h6` | `h3 -> s3 -> s6 -> h6` |
+| `h3 <-> h7` | `h3 -> s3 -> s2 -> s7 -> h7` |
+| `h4 <-> h5` | `h4 -> s4 -> s5 -> h5` |
+| `h4 <-> h6` | `h4 -> s4 -> s3 -> s6 -> h6` |
+| `h4 <-> h7` | `h4 -> s4 -> s7 -> h7` |
+| `h5 <-> h6` | `h5 -> s5 -> s6 -> h6` |
+| `h5 <-> h7` | `h5 -> s5 -> s2 -> s7 -> h7` |
+| `h6 <-> h7` | `h6 -> s6 -> s7 -> h7` |
+
+If the controller output differs from this table in the initial stable topology, the difference is a bug in path computation, host discovery, or topology synchronization.
+
+## Report-Oriented Shortest-Path Figure
+
+Figure 2 is a cleaner report-oriented shortest-path explanation figure. It keeps the same initial topology, and uses labeled representative paths to show how the controller selects routes across the graph. The full 21-pair ground truth is still the table above.
+
+```mermaid
+graph TD
+    h1((h1)) --- s1[s1]
+    h2((h2)) --- s2[s2]
+    h3((h3)) --- s3[s3]
+    h4((h4)) --- s4[s4]
+    h5((h5)) --- s5[s5]
+    h6((h6)) --- s6[s6]
+    h7((h7)) --- s7[s7]
+
+    s1 ---|P1| s2
+    s2 ---|P2| s3
+    s3 ---|P3| s4
+    s4 ---|P4| s5
+    s5 ---|P5| s6
+    s6 ---|P6| s7
+    s1 ---|P7| s4
+    s2 ---|P8| s5
+    s3 ---|P9| s6
+    s4 ---|P10| s7
+    s2 ---|P11| s7
+```
+
+Use the labels in Figure 2 together with the following representative shortest paths when presenting the experiment:
+
+- `h1 -> h4`: `h1 -> s1 -> s4 -> h4` using `P7`
+- `h1 -> h7`: `h1 -> s1 -> s2 -> s7 -> h7` using `P1 + P11`
+- `h2 -> h5`: `h2 -> s2 -> s5 -> h5` using `P8`
+- `h3 -> h6`: `h3 -> s3 -> s6 -> h6` using `P9`
+- `h4 -> h7`: `h4 -> s4 -> s7 -> h7` using `P10`
+- `h5 -> h7`: `h5 -> s5 -> s2 -> s7 -> h7` using `P8 + P11`
+
+These six examples cover the direct shortcut edges (`P7`, `P8`, `P9`, `P10`, `P11`) and make it easy to explain why the remaining host-pair routes in the full table follow the same shortest-hop rule.
 
 ## Running
 
@@ -62,6 +120,8 @@ Then start the complex topology in another terminal:
 cd tests/complex_topology_test
 sudo env "PATH=$PATH" python test_network.py
 ```
+
+The script prints the same initial shortest-path reference at startup so you can compare it with the controller log side by side.
 
 ## Firewall Demo On The Same Topology
 

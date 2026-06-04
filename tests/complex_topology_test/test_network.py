@@ -1,4 +1,5 @@
 import time
+from itertools import combinations
 
 from mininet.cli import CLI
 from mininet.log import setLogLevel
@@ -36,6 +37,45 @@ def print_demo_commands():
     print('links')
     print('net')
     print('===================================\n')
+
+
+def build_switch_adjacency():
+    return {
+        's1': ['s2', 's4'],
+        's2': ['s1', 's3', 's5', 's7'],
+        's3': ['s2', 's4', 's6'],
+        's4': ['s1', 's3', 's5', 's7'],
+        's5': ['s2', 's4', 's6'],
+        's6': ['s3', 's5', 's7'],
+        's7': ['s2', 's4', 's6'],
+    }
+
+
+def shortest_switch_path(adjacency, src, dst):
+    queue = [(src, [src])]
+    visited = {src}
+    while queue:
+        node, path = queue.pop(0)
+        if node == dst:
+            return path
+        for neighbor in adjacency[node]:
+            if neighbor in visited:
+                continue
+            visited.add(neighbor)
+            queue.append((neighbor, path + [neighbor]))
+    return []
+
+
+def print_expected_shortest_paths():
+    adjacency = build_switch_adjacency()
+    host_switch = {'h%s' % index: 's%s' % index for index in range(1, 8)}
+    print('\n===== Initial Shortest-Path Reference =====')
+    print('This list follows the same ascending-neighbor tie-break rule as controller.py.')
+    for left, right in combinations(sorted(host_switch), 2):
+        switch_path = shortest_switch_path(adjacency, host_switch[left], host_switch[right])
+        full_path = [left] + switch_path + [right]
+        print('%s <-> %s: %s' % (left, right, ' -> '.join(full_path)))
+    print('===========================================\n')
 
 
 class ComplexTopo(Topo):
@@ -96,6 +136,7 @@ def run_mininet():
         do_arp_all(net)
         time.sleep(1)
 
+    print_expected_shortest_paths()
     print_demo_commands()
     CLI(net)
     net.stop()
