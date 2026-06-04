@@ -18,6 +18,7 @@ from collections import deque
 from itertools import combinations
 import time
 import networkx as nx
+import os
 from ofctl_utilis import OfCtl,OfCtl_v1_0,OfCtl_after_v1_2,VLANID_NONE
 import logging
 import copy
@@ -36,7 +37,8 @@ class ControllerApp(app_manager.OSKenApp):
         self.adjacency = defaultdict(dict)
         self.switch_host_ports = defaultdict(dict)
         self.topology_graph = nx.Graph()
-        self.firewall = Firewall(rule_file='firewall_rule.json')
+        firewall_rule_file = os.environ.get('FIREWALL_RULE_FILE', 'firewall_rule.json')
+        self.firewall = Firewall(rule_file=firewall_rule_file)
 
     def _mac_to_bin(self, mac_addr):
         return addrconv.mac.text_to_bin(mac_addr)

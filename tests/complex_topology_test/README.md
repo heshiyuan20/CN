@@ -63,6 +63,34 @@ cd tests/complex_topology_test
 sudo env "PATH=$PATH" python test_network.py
 ```
 
+## Firewall Demo On The Same Topology
+
+To reuse this topology for the firewall demo, start the controller with the complex-topology firewall rule file:
+
+```bash
+FIREWALL_RULE_FILE=tests/complex_topology_test/firewall_rule.json osken-manager --observe-links controller.py
+```
+
+The supplied firewall rules deny ICMP and TCP/80 traffic between `h1 (10.0.0.2)` and `h2 (10.0.0.3)` in both directions. This demonstrates the required scenario where two hosts that were previously reachable become unreachable after firewall rules are installed.
+
+Suggested verification commands in the Mininet CLI:
+
+```bash
+h1 ping -c 2 h2
+h2 ping -c 2 h1
+h1 ping -c 2 h3
+h1 python3 -m http.server 80 &
+h2 curl --connect-timeout 2 http://10.0.0.2/
+```
+
+Expected results:
+
+- `h1 ping -c 2 h2` fails
+- `h2 ping -c 2 h1` fails
+- `h1 ping -c 2 h3` still succeeds
+- `h2` cannot reach `h1` on TCP/80
+- The controller still prints the topology graph and switch shortest paths after topology changes, while the firewall rules make the selected host pair unreachable
+
 ## Suggested CLI Demo
 
 After the Mininet CLI appears, run these commands to cover the required topology changes:
