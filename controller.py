@@ -7,6 +7,7 @@ from os_ken.topology.api import get_all_link, get_all_host, get_all_switch
 from os_ken.topology.switches import Switch, Host, HostState, Port, PortState, PortData, PortDataState, Link, LinkState
 from os_ken.topology.switches import Switches
 from os_ken.ofproto import ofproto_v1_0, ether, inet
+from os_ken.lib import addrconv
 from os_ken.lib.packet import packet, ethernet, ether_types, arp
 from os_ken.lib.packet import dhcp
 from os_ken.lib.packet import ipv4
@@ -35,8 +36,8 @@ class ControllerApp(app_manager.OSKenApp):
         self.switch_host_ports = defaultdict(dict)
         self.firewall = Firewall(rule_file='firewall_rule.json')
 
-    def _mac_to_int(self, mac_addr):
-        return int(mac_addr.replace(':', ''), 16)
+    def _mac_to_bin(self, mac_addr):
+        return addrconv.mac.text_to_bin(mac_addr)
 
     def _refresh_topology(self):
         previous_hosts = dict(self.hosts)
@@ -132,7 +133,7 @@ class ControllerApp(app_manager.OSKenApp):
                 self.ofctls[dpid].set_flow(
                     cookie=0x3050,
                     priority=1000,
-                    dl_dst=self._mac_to_int(host_mac),
+                    dl_dst=self._mac_to_bin(host_mac),
                     actions=[self.datapaths[dpid].ofproto_parser.OFPActionOutput(out_port, 0)],
                 )
 
